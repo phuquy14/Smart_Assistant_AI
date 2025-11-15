@@ -53,7 +53,6 @@ def train_and_predict(df_input, date_col, value_col):
          return None, None
 
     # Initialize and Train the Prophet Model
-    # Assumes data is at 10-minute intervals for prediction frequency
     model = Prophet(interval_width=0.95, daily_seasonality=True)
     model.fit(df_prophet)
 
@@ -93,7 +92,7 @@ def run_app():
         "Chọn Cột Ngày/Giờ (Time Series):",
         options=all_cols,
         index=all_cols.index('Datetime') if 'Datetime' in all_cols else 0, # Default to 'Datetime' or the first column
-        help="Chọn cột chứa thông tin thời gian (Ngày, Giờ, Tháng...). Tên cột không cần là 'Datetime'."
+        help="Chọn cột chứa thông tin thời gian."
     )
 
     # Cột Giá trị
@@ -102,7 +101,7 @@ def run_app():
         st.error("LỖI: File của bạn không có cột nào ở dạng số để dự đoán. Vui lòng kiểm tra lại dữ liệu.")
         return
 
-    # Set default index for value column based on existing column names
+    # Set default index for value column
     default_value_index = 0
     if 'PowerConsumption_Zone1' in numeric_cols:
         default_value_index = numeric_cols.index('PowerConsumption_Zone1')
@@ -118,19 +117,21 @@ def run_app():
         help="Chọn cột chứa giá trị (ví dụ: kWh) mà bạn muốn AI dự đoán."
     )
     
-    # 3.3. Cấu hình Ngưỡng Cảnh báo
+    # 3.3. Cấu hình Ngưỡng Cảnh báo (Thanh điều chỉnh/Ô nhập liệu bạn đang tìm kiếm)
     st.sidebar.markdown("---")
     st.sidebar.subheader("3. Cấu hình Cảnh báo")
 
     try:
         min_val = df[value_col].min()
         max_val = df[value_col].max()
+        # Set default value slightly above the mean or min for better initial visibility
         default_val = df[value_col].mean() * 1.5 if df[value_col].mean() > min_val else min_val * 1.5
     except:
         min_val = 10000.0
         max_val = 50000.0
         default_val = 35000.0
 
+    # Đây chính là ô nhập liệu (thanh điều chỉnh) mức tiêu thụ để tính toán
     ALERT_THRESHOLD = st.sidebar.number_input(
         f"Đặt Ngưỡng Cảnh báo ({value_col}):", 
         min_value=min_val, 
@@ -148,7 +149,7 @@ def run_app():
         model, forecast = train_and_predict(df, date_col, value_col)
 
     if model is None:
-        return # Exit if there was a data error
+        return 
 
     st.success("Huấn luyện mô hình AI hoàn tất!")
 
