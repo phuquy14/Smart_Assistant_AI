@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 # ----------------------------------------------------
 st.set_page_config(layout="wide") # Thiết lập ứng dụng web hiển thị rộng hơn
 st.title("💡 Trợ Lý Điện Thông Minh (AI Power Assistant)")
-st.write("Ứng dụng dự đoán tiêu thụ điện năng 7 ngày tới dựa trên file powerconsumption.csv.")
+st.write("Ứng dụng dự đoán tiêu thụ điện năng 7 ngày tới dựa trên dữ liệu lịch sử do người dùng cung cấp.")
 
 # Tạo ô để người dùng điều chỉnh ngưỡng cảnh báo (Sidebar)
 st.sidebar.subheader("Cài đặt Cảnh báo")
@@ -17,18 +17,26 @@ ALERT_THRESHOLD = st.sidebar.number_input(
     min_value=10000, 
     max_value=50000, 
     value=35000, 
-    step=100
+    step=100,
+    help="AI sẽ cảnh báo những thời điểm dự đoán tiêu thụ vượt qua ngưỡng này."
 )
 
 # ----------------------------------------------------
-# 2. HÀM CHÍNH ĐỂ CHẠY VÀ HIỂN THỊ MÔ HÌNH
+# 2. HÀM HUẤN LUYỆN VÀ DỰ BÁO (Sử dụng Cache để tối ưu tốc độ)
 # ----------------------------------------------------
-# Dùng cache (lưu trữ tạm thời) để huấn luyện mô hình 
-# chỉ một lần duy nhất, giúp ứng dụng chạy nhanh hơn.
+# @st.cache_resource: Lệnh này bảo Streamlit chỉ chạy hàm này 1 lần 
+# và lưu kết quả vào bộ nhớ. Nếu file CSV không đổi, nó không chạy lại, giúp ứng dụng siêu nhanh.
 @st.cache_resource 
 def train_and_predict(df_input):
-    # Chuẩn bị Dữ liệu cho Prophet
-    df_prophet = df_input[['Datetime', 'PowerConsumption_Zone1']].copy()
+    # Chuẩn bị Dữ liệu cho Prophet (đảm bảo cột 'ds' và 'y')
+    
+    # Kiểm tra các cột bắt buộc
+    required_cols = ['Datetime', 'PowerConsumption_Zone1']
+    if not all(col in df_input.columns for col in required_cols):
+        st.error("LỖI DỮ LIỆU: File CSV của bạn phải có các cột 'Datetime' và 'PowerConsumption_Zone1'.")
+        return None, None
+
+    df_prophet = df_input[required_cols].copy()
     df_prophet.rename(columns={'Datetime': 'ds', 'PowerConsumption_Zone1': 'y'}, inplace=True)
     df_prophet['ds'] = pd.to_datetime(df_prophet['ds'])
 
@@ -42,23 +50,40 @@ def train_and_predict(df_input):
     
     return model, forecast
 
+# ----------------------------------------------------
+# 3. HÀM CHÍNH ĐỂ CHẠY ỨNG DỤNG
+# ----------------------------------------------------
 def run_app():
+    
+    st.sidebar.subheader("Tải lên Dữ liệu của Bạn")
+    
+    # Kích hoạt tính năng tải file lên cho NGƯỜI DÙNG KHÁC
+    uploaded_file = st.sidebar.file_uploader(
+        "Vui lòng tải lên file CSV chứa dữ liệu tiêu thụ điện của bạn (phải có cột 'Datetime' và 'PowerConsumption_Zone1')", 
+        type=['csv']
+    )
+    
+    # Kiểm tra xem người dùng đã tải file lên chưa
+    if uploaded_file is None:
+        st.info("Vui lòng tải lên file dữ liệu tiêu thụ điện của bạn để bắt đầu phân tích.")
+        return # Thoát khỏi hàm nếu chưa có file
+
+    # Nếu có file, đọc file đó
+    df = pd.read_csv(uploaded_file)
+    
     st.subheader("1. Xử lý và Huấn luyện Mô hình")
     
-    # Tải Dữ liệu
-    try:
-        df = pd.read_csv('powerconsumption.csv')
-    except FileNotFoundError:
-        st.error("LỖI: Không tìm thấy file 'powerconsumption.csv'. Hãy đảm bảo file này nằm cùng thư mục.")
-        return
-
-    # Huấn luyện mô hình và dự báo
-    with st.spinner('Đang huấn luyện mô hình Prophet... (Quá trình này có thể mất 30-60 giây)'):
+    # Bắt đầu quá trình huấn luyện
+    with st.spinner('Đang huấn luyện mô hình Prophet... (Vui lòng chờ) '):
         model, forecast = train_and_predict(df)
+
+    if model is None:
+        return # Thoát nếu có lỗi dữ liệu
+
     st.success("Huấn luyện mô hình AI hoàn tất!")
 
     # ----------------------------------------------------
-    # 3. HIỂN THỊ KẾT QUẢ TRỰC QUAN
+    # 4. HIỂN THỊ KẾT QUẢ TRỰC QUAN
     # ----------------------------------------------------
     st.subheader("2. Biểu đồ Dự báo 7 Ngày tới")
     
@@ -70,7 +95,7 @@ def run_app():
     st.pyplot(fig1)
 
     # ----------------------------------------------------
-    # 4. CHẠY CẢNH BÁO THÔNG MINH
+    # 5. CHẠY CẢNH BÁO THÔNG MINH
     # ----------------------------------------------------
     st.subheader("3. Cảnh báo và Lời khuyên")
     
